@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Summernote</title>
+  <link href="http://netdna.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.css" rel="stylesheet">
+  <script src="http://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.js"></script>
+  <script src="http://netdna.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.js"></script>
+  <link href="http://cdnjs.cloudflare.com/ajax/libs/summernote/0.8.9/summernote.css" rel="stylesheet">
+  <script src="http://cdnjs.cloudflare.com/ajax/libs/summernote/0.8.9/summernote.js"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/ramda/0.25.0/ramda.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.8.0/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.8.0/jszip.js"></script>
+
+  <style>
+    .report-result {
+      border: 2px solid black;
+      padding: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <form id="questale-form">
+    <div class="form-group">
+      <label for="questale-report">Questale report</label>
+      <input type="file" class="form-control-file" id="questale-report">
+    </div>
+    <button type="submit" class="btn btn-primary">Build reports</button>
+  </form>
+  <div id="summernote">
+
+  </div>
+
+  <div id="results">
+
+  </div>
+
+  <script type="text/javascript">
+
+    var listView = function (items) {
+      item_html = R.map((item) => {
+        return `<li>${item}</li>`;
+      }, items).join("");
+
+      return `<ul>${item_html}</ul>`
+    }
+
+    var commaSeparatedView = function (items, n) {
+      items = items.slice(0, n);
+      return items.join(", ");
+    }
+
+    var buildReports = function (reports) {
+      var template = $('#summernote').summernote('code');
+      data = reports[0];
+      reports_html = R.map((data) => {
+        try {
+          var report_data = {
+            market: data['Title'].split('Market')[0].split('Global')[1].trim(),
+            pages: data['Pages'],
+            ntf: data['Number of Tables and Figures'],
+            sup: data['Single User Price'],
+            eup: data['Enterprise Price'],
+            applications: R.map(R.trim, data['Application'].trim().split('\n')),
+            product_types: R.map(R.trim, data['Product type'].trim().split('\n')),
+            players: R.map(R.trim, data['Players'].trim().split('\n'))
+          };
+          var report_text = template;
+          if (market = report_text.match(/{{market}}/)) {
+            report_text = report_text.replace(/{{market}}/, report_data.market);
+          }
+          if (pages = report_text.match(/{{pages}}/)) {
+            report_text = report_text.replace(/{{pages}}/, report_data.pages);
+          }
+          if (ntf = report_text.match(/{{ntf}}/)) {
+            report_text = report_text.replace(/{{ntf}}/, report_data.ntf);
+          }
+          if (sup = report_text.match(/{{sup}}/)) {
+            report_text = report_text.replace(/{{sup}}/, report_data.sup);
+          }
+          if (eup = report_text.match(/{{eup}}/)) {
+            report_text = report_text.replace(/{{eup}}/, report_data.eup);
+          }
+          while (applications = report_text.match(/{{applications\([0-9]*\)}}/)) {
+            var n_app = applications[0].split(/[()]/)[1];
+            if (n_app == "")
+              report_text = report_text.replace(/{{applications\([0-9]*\)}}/, listView(report_data.applications));
+            else
+              report_text = report_text.replace(/{{applications\([0-9]*\)}}/, commaSeparatedView(report_data.applications, parseInt(n_app, 10)));
+          }
+          while (product_types = report_text.match(/{{product_types\([0-9]*\)}}/)) {
+            var n_app = product_types[0].split(/[()]/)[1];
+            if (n_app == "")
+              report_text = report_text.replace(/{{product_types\([0-9]*\)}}/, listView(report_data.product_types));
+            else
+              report_text = report_text.replace(/{{product_types\([0-9]*\)}}/, commaSeparatedView(report_data.product_types, parseInt(n_app, 10)));
+          }
+          while (players = report_text.match(/{{players\([0-9]*\)}}/)) {
+            var n_app = players[0].split(/[()]/)[1];
+            if (n_app == "")
+              report_text = report_text.replace(/{{players\([0-9]*\)}}/, listView(report_data.players));
+            else
+              report_text = report_text.replace(/{{players\([0-9]*\)}}/, commaSeparatedView(report_data.players, parseInt(n_app, 10)));
+          }
+          return report_text;
+        }
+        catch (e) {
+          console.log('Error', data, e);
+          return null;
+        }
+      }, reports);
+
+      reports_html = R.reject(R.isNil, reports_html);
+      reports_html.forEach((html) => {
+        $("#results").append(`<div class='report-result'>${html}</div>`);
+      });
+    };
+
+    var parseExcel = function (file) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var data = e.target.result;
+        var workbook = XLSX.read(data, {
+          type: 'binary'
+        });
+
+        workbook.SheetNames.forEach(function (sheetName) {
+          // Here is your object
+          var json_object = XLSX.utils.sheet_to_row_object_array(workbook.Sheets[sheetName]);
+          buildReports(json_object);
+        })
+      };
+
+      reader.onerror = function (ex) {
+        console.log(ex);
+      };
+
+      reader.readAsBinaryString(file);
+    };
+
+    $('#questale-report').on('change', function (e) {
+      e.preventDefault();
+      var file = e.target.files[0];
+      parseExcel(file);
+    });
+
+    $('#questale-form').on('submit', function (e) {
+      e.preventDefault();
+    });
+
+    $(document).ready(function () {
+      $('#summernote').summernote();
+    });
+  </script>
+</body>
+
+</html>
